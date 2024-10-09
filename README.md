@@ -13,7 +13,7 @@ Add FLUX Swift to your project using Swift Package Manager. Add the following de
 
 ```swift
 dependencies: [
-.package(url: "https://github.com/mzbac/flux.swift.git", from: "0.1.0")
+.package(url: "https://github.com/mzbac/flux.swift.git", from: "0.1.1")
 ]
 ```
 
