@@ -77,3 +77,10 @@ For detailed configuration options, refer to the `FluxConfiguration.swift` file.
 - [ ] Support for FLUX.1 Dev model
 - [ ] Integration of LoRA
 - [ ] Image-to-image generation
+
+## Acknowledgements
+
+I’d like to thank the following projects for inspiring and guiding the development of this work:
+
+- [mflux](https://github.com/filipstrand/mflux) - A MLX port of FLUX
+- [mlx-swift-examples](https://github.com/ml-explore/mlx-swift-examples) - Examples using MLX Swift.
