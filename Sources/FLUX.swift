@@ -115,11 +115,9 @@ public class Flux1Schnell: FLUX, TextToImageGenerator {
     if let relativeAttentionBias = t5Weights[
       "encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight"]
     {
-      for i in 1..<32 {  // Assuming there are 32 blocks, adjust if necessary
-        let key = "encoder.block.\(i).layer.0.SelfAttention.relative_attention_bias.weight"
-        t5Weights[key] = relativeAttentionBias
-      }
+      t5Weights["relative_attention_bias.weight"] = relativeAttentionBias
     }
+    
     t5Encoder.update(parameters: ModuleParameters.unflattened(t5Weights))
     return t5Encoder
   }

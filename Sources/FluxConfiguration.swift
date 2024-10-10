@@ -104,7 +104,7 @@ public struct FluxConfiguration: Sendable {
         quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
         quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
         quantize(model: flux.transformer, filter: { k, m in
-          m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64 && !k.contains("net")
+          m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64
         })
         quantize(model: flux.vae, filter: { k, m in m is Linear })
       }
