@@ -300,14 +300,6 @@ public class JointAttention: Module {
     return (hiddenStates, encoderHiddenStatesOutput)
   }
 
-    // static func attention(query: MLXArray, key: MLXArray, value: MLXArray) -> MLXArray {
-    //     let scale = 1 / MLX.sqrt(MLXArray(Float(query.dim(-1))))
-    //     let scores = MLX.matmul(query * scale, key.transposed(0, 1, 3, 2))
-    //     let attn = MLX.softmax(scores, axis: -1)
-    //     let hiddenStates = MLX.matmul(attn, value)
-    //     return hiddenStates
-    // }
-
   static func applyRope(_ xq: MLXArray, _ xk: MLXArray, freqsCis: MLXArray) -> (MLXArray, MLXArray)
   {
     let xq_ = xq.asType(.float32).reshaped(xq.shape.dropLast() + [-1, 1, 2])
