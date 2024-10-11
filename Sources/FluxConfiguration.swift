@@ -33,7 +33,7 @@ public struct EvaluateParameters {
 
   public init(
     numInferenceSteps: Int = 4, width: Int = 1024, height: Int = 1024, guidance: Float = 4.0,
-    seed: UInt64 = 0, prompt: String = "", numTrainSteps: Int = 1000
+    seed: UInt64 = 0, prompt: String = "", numTrainSteps: Int = 1000, shiftSigmas: Bool = false
   ) {
     if width % 16 != 0 || height % 16 != 0 {
       print("Warning: Width and height should be multiples of 16. Rounding down.")
@@ -45,13 +45,26 @@ public struct EvaluateParameters {
     self.seed = seed
     self.prompt = prompt
     self.numTrainSteps = numTrainSteps
-    self.sigmas = Self.createSigmasValues(numInferenceSteps: numInferenceSteps)
+    self.sigmas = Self.createSigmasValues(
+      numInferenceSteps: numInferenceSteps, shiftSigmas: shiftSigmas, width: width, height: height)
   }
 
-  private static func createSigmasValues(numInferenceSteps: Int) -> MLXArray {
-    // TODO: add shiftSigmas for flux1Dev
-    let sigmas = MLXArray.linspace(1, 1.0 / Float(numInferenceSteps), count: numInferenceSteps)
-    return MLX.concatenated([sigmas, MLXArray.zeros([1])])
+  private static func createSigmasValues(
+    numInferenceSteps: Int, shiftSigmas: Bool = false, width: Int = 512, height: Int = 512
+  ) -> MLXArray {
+    var sigmas = MLXArray.linspace(1, 1.0 / Float(numInferenceSteps), count: numInferenceSteps)
+    if shiftSigmas {
+      let y1: Float = 0.5
+      let x1: Float = 256
+      let m = (1.5 - y1) / (4096 - x1)
+      let b = y1 - m * x1
+      let mu = m * Float(width * height) / 256 + b
+      let muArray = MLXArray(mu)
+      let shiftedSigmas = MLX.exp(muArray) / (MLX.exp(muArray) + (1 / sigmas - 1))
+      sigmas = shiftedSigmas
+    }
+    sigmas = MLX.concatenated([sigmas, MLXArray.zeros([1])])
+    return sigmas
   }
 }
 
@@ -103,9 +116,39 @@ public struct FluxConfiguration: Sendable {
       if loadConfiguration.quantize {
         quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
         quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
-        quantize(model: flux.transformer, filter: { k, m in
-          m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64
-        })
+        quantize(
+          model: flux.transformer,
+          filter: { k, m in
+            m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64
+          })
+        quantize(model: flux.vae, filter: { k, m in m is Linear })
+      }
+      return flux
+    }
+  )
+
+  public static let flux1Dev = FluxConfiguration(
+    id: "black-forest-labs/FLUX.1-dev",
+    files: [
+      .mmditWeights: "transformer/*.safetensors",
+      .textEncoderWeights: "text_encoder/model.safetensors",
+      .textEncoderWeights2: "text_encoder_2/*.safetensors",
+      .tokenizer: "tokenizer/*",
+      .tokenizer2: "tokenizer_2/*",
+      .vaeWeights: "vae/diffusion_pytorch_model.safetensors",
+    ],
+    defaultParameters: { EvaluateParameters(numInferenceSteps: 20, shiftSigmas: true) },
+    factory: { hub, fluxConfiguration, loadConfiguration in
+      let flux = try Flux1Dev(
+        hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
+      if loadConfiguration.quantize {
+        quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
+        quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
+        quantize(
+          model: flux.transformer,
+          filter: { k, m in
+            m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64
+          })
         quantize(model: flux.vae, filter: { k, m in m is Linear })
       }
       return flux

@@ -16,7 +16,9 @@ public struct MultiModalDiffusionConfiguration {
   public var axesDimsRope: (Int, Int, Int) = (16, 56, 56)
   public var layerNormEps: Float = 1e-6
 
-  public init() {}
+  public init(guidanceEmbeds: Bool = false) {
+    self.guidanceEmbeds = guidanceEmbeds
+  }
 }
 
 public class EmbedND: Module {
@@ -114,11 +116,11 @@ public class TimeTextEmbed: Module {
   @ModuleInfo(key: "guidance_embedder") var guidanceEmbedder: GuidanceEmbedder?
   @ModuleInfo(key: "timestep_embedder") var timestepEmbedder: TimestepEmbedder
 
-  init(_ modelConfig: MultiModalDiffusionConfiguration) {
-    self._textEmbedder.wrappedValue = TextEmbedder(modelConfig)
+  init(_ config: MultiModalDiffusionConfiguration) {
+    self._textEmbedder.wrappedValue = TextEmbedder(config)
     self._guidanceEmbedder.wrappedValue =
-      modelConfig.guidanceEmbeds ? GuidanceEmbedder(modelConfig) : nil
-    self._timestepEmbedder.wrappedValue = TimestepEmbedder(modelConfig)
+      config.guidanceEmbeds ? GuidanceEmbedder(config) : nil
+    self._timestepEmbedder.wrappedValue = TimestepEmbedder(config)
   }
 
   func callAsFunction(timeStep: MLXArray, pooledProjection: MLXArray, guidance: MLXArray)
@@ -189,19 +191,21 @@ public class ProjLinear: Module, UnaryLayer {
 }
 
 public class FeedForward: Module {
-  let net: [UnaryLayer]
+  @ModuleInfo(key: "linear1") var linear1: Linear
+  @ModuleInfo(key: "linear2") var linear2: Linear
   let activation: (MLXArray) -> MLXArray
 
   init(_ config: MultiModalDiffusionConfiguration, activation: @escaping (MLXArray) -> MLXArray) {
     let hiddenDim: Int = config.numAttentionHeads * config.attentionHeadDim
-    self.net = [ProjLinear(hiddenDim), Identity(), Linear(2 * hiddenDim, hiddenDim)]
+    self._linear1.wrappedValue = Linear(hiddenDim, 2 * hiddenDim)
     self.activation = activation
+    self._linear2.wrappedValue = Linear(2 * hiddenDim, hiddenDim)
   }
 
   func callAsFunction(_ hiddenStates: MLXArray) -> MLXArray {
-    let x = net[0](hiddenStates)
+    let x = linear1(hiddenStates)
     let y = activation(x)
-    let z = net[2](y)
+    let z = linear2(y)
     return z
   }
 }
@@ -282,7 +286,7 @@ public class JointAttention: Module {
     value = MLX.concatenated([encoderHiddenStatesValueProj, value], axis: 2)
     (query, key) = JointAttention.applyRope(query, key, freqsCis: imageRotaryEmb)
 
-    var hiddenStates = JointAttention.attention(query: query, key: key, value: value)
+    var hiddenStates = MLXFast.scaledDotProductAttention(queries: query, keys: key, values: value, scale: 1 / sqrt(Float(query.dim(-1))),mask: nil)
 
     hiddenStates = hiddenStates.transposed(0, 2, 1, 3)
     hiddenStates = hiddenStates.reshaped(1, -1, config.numAttentionHeads * config.attentionHeadDim)
@@ -296,13 +300,13 @@ public class JointAttention: Module {
     return (hiddenStates, encoderHiddenStatesOutput)
   }
 
-    static func attention(query: MLXArray, key: MLXArray, value: MLXArray) -> MLXArray {
-        let scale = 1 / MLX.sqrt(MLXArray(Float(query.dim(-1))))
-        let scores = MLX.matmul(query * scale, key.transposed(0, 1, 3, 2))
-        let attn = MLX.softmax(scores, axis: -1)
-        let hiddenStates = MLX.matmul(attn, value)
-        return hiddenStates
-    }
+    // static func attention(query: MLXArray, key: MLXArray, value: MLXArray) -> MLXArray {
+    //     let scale = 1 / MLX.sqrt(MLXArray(Float(query.dim(-1))))
+    //     let scores = MLX.matmul(query * scale, key.transposed(0, 1, 3, 2))
+    //     let attn = MLX.softmax(scores, axis: -1)
+    //     let hiddenStates = MLX.matmul(attn, value)
+    //     return hiddenStates
+    // }
 
   static func applyRope(_ xq: MLXArray, _ xk: MLXArray, freqsCis: MLXArray) -> (MLXArray, MLXArray)
   {

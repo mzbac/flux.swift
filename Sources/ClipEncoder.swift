@@ -61,22 +61,12 @@ public class CLIPSdpaAttention: Module {
     key = CLIPSdpaAttention.reshapeAndTranspose(key, batchSize: B, numHeads: config.numAttentionHeads, headDim: config.headDimension)
     value = CLIPSdpaAttention.reshapeAndTranspose(value, batchSize: B, numHeads: config.numAttentionHeads, headDim: config.headDimension)
 
-    var hiddenStates = CLIPSdpaAttention.maskedAttention(query: query, key: key, value: value, mask: attentionMask)
+    var hiddenStates = MLXFast.scaledDotProductAttention(queries: query, keys: key, values: value, scale:  1 / sqrt(Float(query.dim(-1))), mask: attentionMask)
     hiddenStates = hiddenStates.transposed(0, 2, 1, 3)
     hiddenStates = hiddenStates.reshaped(config.batchSize, -1, config.numAttentionHeads * config.headDimension)
 
     hiddenStates = outProj(hiddenStates)
     return hiddenStates
-  }
-
-  static func maskedAttention(query: MLXArray, key: MLXArray, value: MLXArray, mask: MLXArray?) -> MLXArray {
-    let scale = 1 / sqrt(Float(query.dim(-1)))
-    var scores = (query * scale).matmul(key.transposed(0, 1, 3, 2))
-    if let mask {
-      scores = scores + mask.asType(scores.dtype)
-    }
-    let attn = softmax(scores, axis: -1)
-    return matmul(attn, value)
   }
 
   static func reshapeAndTranspose(_ x: MLXArray, batchSize: Int, numHeads: Int, headDim: Int) -> MLXArray {
