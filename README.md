@@ -74,7 +74,7 @@ For detailed configuration options, refer to the `FluxConfiguration.swift` file.
 
 ## TODO
 
-- [ ] Support for FLUX.1 Dev model
+- [x] Support for FLUX.1 Dev model
 - [ ] Integration of LoRA
 - [ ] Image-to-image generation
 
