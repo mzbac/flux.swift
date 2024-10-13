@@ -7,12 +7,47 @@ import Tokenizers
 
 open class FLUX {
 
+  internal func loadLoraWeights(hub: HubApi, loraPath: String, dType: DType) async throws
+    -> [String: MLXArray]
+  {
+    let loraDirectory: URL
+    if FileManager.default.fileExists(atPath: loraPath) {
+      loraDirectory = URL(fileURLWithPath: loraPath)
+    } else {
+      let repo = Hub.Repo(id: loraPath)
+      try await hub.snapshot(from: repo, matching: ["*.safetensors"])
+      loraDirectory = hub.localRepoLocation(repo)
+    }
+
+    return try Self.loadLoraWeights(directory: loraDirectory, dType: dType)
+  }
+
+  internal static func loadLoraWeights(directory: URL, dType: DType) throws -> [String: MLXArray] {
+    var loraWeights = [String: MLXArray]()
+    let enumerator = FileManager.default.enumerator(
+      at: directory, includingPropertiesForKeys: nil)!
+    for case let url as URL in enumerator {
+      if url.pathExtension == "safetensors" {
+        let w = try loadArrays(url: url)
+        for (key, value) in w {
+          let newKey = remapWeightKey(key)
+          if value.dtype != .bfloat16 {
+            loraWeights[newKey] = value.asType(dType)
+          } else {
+            loraWeights[newKey] = value
+          }
+        }
+      }
+    }
+    return loraWeights
+  }
+
   internal static func remapWeightKey(_ key: String) -> String {
-    if (key.contains(".ff.") || key.contains(".ff_context.")) {
+    if key.contains(".ff.") || key.contains(".ff_context.") {
       let components = key.components(separatedBy: ".")
       if components.count >= 5 {
         let blockIndex = components[1]
-        let ffType = components[2] // "ff" or "ff_context"
+        let ffType = components[2]  // "ff" or "ff_context"
         let netIndex = components[4]
 
         if netIndex == "0" {
@@ -89,7 +124,7 @@ open class FLUX {
     {
       t5Weights["relative_attention_bias.weight"] = relativeAttentionBias
     }
-    
+
     t5Encoder.update(parameters: ModuleParameters.unflattened(t5Weights))
     return t5Encoder
   }
@@ -112,8 +147,8 @@ open class FLUX {
 public class Flux1Schnell: FLUX, TextToImageGenerator {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
-  let vae: VAE
   let transformer: MultiModalDiffusionTransformer
+  let vae: VAE
   let t5Encoder: T5Encoder
   let clipEncoder: CLIPEncoder
 
@@ -154,7 +189,12 @@ public class Flux1Schnell: FLUX, TextToImageGenerator {
 
   public func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator {
     let latentsShape = [1, (parameters.height / 16) * (parameters.width / 16), 64]
-    let latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(parameters.seed))
+    let latents: MLXArray
+    if let seed = parameters.seed {
+      latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(seed))
+    } else {
+      latents = MLXRandom.normal(latentsShape)
+    }
     let (promptEmbeddings, pooledPromptEmbeddings) = conditionText(prompt: parameters.prompt)
 
     return DenoiseIterator(
@@ -203,8 +243,8 @@ public class Flux1Schnell: FLUX, TextToImageGenerator {
 public class Flux1Dev: FLUX, TextToImageGenerator {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
-  let vae: VAE
   let transformer: MultiModalDiffusionTransformer
+  let vae: VAE
   let t5Encoder: T5Encoder
   let clipEncoder: CLIPEncoder
 
@@ -222,7 +262,8 @@ public class Flux1Dev: FLUX, TextToImageGenerator {
   private static func loadTransformer(directory: URL, dType: DType) throws
     -> MultiModalDiffusionTransformer
   {
-    let transformer = MultiModalDiffusionTransformer(MultiModalDiffusionConfiguration(guidanceEmbeds: true))
+    let transformer = MultiModalDiffusionTransformer(
+      MultiModalDiffusionConfiguration(guidanceEmbeds: true))
     var transformerWeights = [String: MLXArray]()
     let enumerator = FileManager.default.enumerator(
       at: directory.appending(path: "transformer"), includingPropertiesForKeys: nil)!
@@ -245,7 +286,12 @@ public class Flux1Dev: FLUX, TextToImageGenerator {
 
   public func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator {
     let latentsShape = [1, (parameters.height / 16) * (parameters.width / 16), 64]
-    let latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(parameters.seed))
+    let latents: MLXArray
+    if let seed = parameters.seed {
+      latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(seed))
+    } else {
+      latents = MLXRandom.normal(latentsShape)
+    }
     let (promptEmbeddings, pooledPromptEmbeddings) = conditionText(prompt: parameters.prompt)
 
     return DenoiseIterator(

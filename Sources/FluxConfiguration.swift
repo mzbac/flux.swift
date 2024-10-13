@@ -11,13 +11,17 @@ public struct LoadConfiguration: Sendable {
   /// quantize weights
   public var quantize = false
 
+  public let loraPath: String?
   public var dType: DType {
     float16 ? .float16 : .float32
   }
 
-  public init(float16: Bool = true, quantize: Bool = false) {
+  public init(
+    float16: Bool = true, quantize: Bool = false, loraPath: String? = nil
+  ) {
     self.float16 = float16
     self.quantize = quantize
+    self.loraPath = loraPath
   }
 }
 
@@ -26,14 +30,20 @@ public struct EvaluateParameters {
   public var height: Int
   public var numInferenceSteps: Int
   public var guidance: Float
-  public var seed: UInt64
+  public var seed: UInt64?
   public var prompt: String
   public var numTrainSteps: Int
   public let sigmas: MLXArray
 
   public init(
-    numInferenceSteps: Int = 4, width: Int = 1024, height: Int = 1024, guidance: Float = 4.0,
-    seed: UInt64 = 0, prompt: String = "", numTrainSteps: Int = 1000, shiftSigmas: Bool = false
+    width: Int = 512,
+    height: Int = 512,
+    numInferenceSteps: Int = 4,
+    guidance: Float = 4.0,
+    seed: UInt64? = nil,
+    prompt: String = "",
+    numTrainSteps: Int = 1000,
+    shiftSigmas: Bool = false
   ) {
     if width % 16 != 0 || height % 16 != 0 {
       print("Warning: Width and height should be multiples of 16. Rounding down.")
@@ -77,12 +87,36 @@ enum FileKey {
   case tokenizer2
 }
 
+// TODO: add support for mlx flux fine-tuning
+func fuseLoraWeights(
+  transform: Module, transformerWeight: [String: MLXArray], loraWeight: [String: MLXArray]
+) -> [String: MLXArray] {
+  var fusedWeights = transformerWeight
+
+  for (key, value) in transform.namedModules() {
+    if let _ = value as? Linear {
+      let loraAKey = "transformer." + key + ".lora_A.weight"
+      let loraBKey = "transformer." + key + ".lora_B.weight"
+      let weightKey = key + ".weight"
+
+      if let loraA = loraWeight[loraAKey], let loraB = loraWeight[loraBKey],
+        let transformerWeight = fusedWeights[weightKey]
+      {
+        let loraScale: Float = 1.0 
+        let loraFused = MLX.matmul(loraB, loraA)
+        fusedWeights[weightKey] = transformerWeight + loraScale * loraFused
+      }
+    }
+  }
+  return fusedWeights
+}
+
 public struct FluxConfiguration: Sendable {
-  public let id: String
+  public var id: String
   let files: [FileKey: String]
   public let defaultParameters: @Sendable () -> EvaluateParameters
   let factory:
-    @Sendable (HubApi, FluxConfiguration, LoadConfiguration) throws ->
+    @Sendable (HubApi, FluxConfiguration, LoadConfiguration) async throws ->
       FLUX
 
   public func download(
@@ -94,9 +128,9 @@ public struct FluxConfiguration: Sendable {
   }
 
   public func textToImageGenerator(hub: HubApi = HubApi(), configuration: LoadConfiguration)
-    throws -> TextToImageGenerator?
+    async throws -> TextToImageGenerator?
   {
-    try factory(hub, self, configuration) as? TextToImageGenerator
+    try await factory(hub, self, configuration) as? TextToImageGenerator
   }
 
   public static let flux1Schnell = FluxConfiguration(
@@ -113,6 +147,20 @@ public struct FluxConfiguration: Sendable {
     factory: { hub, fluxConfiguration, loadConfiguration in
       let flux = try Flux1Schnell(
         hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
+
+      if let loraPath = loadConfiguration.loraPath {
+        let loraWeight = try await flux.loadLoraWeights(
+          hub: hub, loraPath: loraPath, dType: loadConfiguration.dType)
+
+        let weights = fuseLoraWeights(
+          transform: flux.transformer,
+          transformerWeight: Dictionary(
+            uniqueKeysWithValues: flux.transformer.parameters().flattened()), loraWeight: loraWeight
+        )
+
+        flux.transformer.update(parameters: ModuleParameters.unflattened(weights))
+      }
+
       if loadConfiguration.quantize {
         quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
         quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
@@ -141,6 +189,20 @@ public struct FluxConfiguration: Sendable {
     factory: { hub, fluxConfiguration, loadConfiguration in
       let flux = try Flux1Dev(
         hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
+
+      if let loraPath = loadConfiguration.loraPath {
+        let loraWeight = try await flux.loadLoraWeights(
+          hub: hub, loraPath: loraPath, dType: loadConfiguration.dType)
+
+        let weights = fuseLoraWeights(
+          transform: flux.transformer,
+          transformerWeight: Dictionary(
+            uniqueKeysWithValues: flux.transformer.parameters().flattened()), loraWeight: loraWeight
+        )
+
+        flux.transformer.update(parameters: ModuleParameters.unflattened(weights))
+      }
+
       if loadConfiguration.quantize {
         quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
         quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
