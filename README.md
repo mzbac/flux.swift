@@ -13,7 +13,7 @@ Add FLUX Swift to your project using Swift Package Manager. Add the following de
 
 ```swift
 dependencies: [
-.package(url: "https://github.com/mzbac/flux.swift.git", from: "0.1.1")
+.package(url: "https://github.com/mzbac/flux.swift.git", from: "0.1.3")
 ]
 ```
 
@@ -75,7 +75,7 @@ For detailed configuration options, refer to the `FluxConfiguration.swift` file.
 ## TODO
 
 - [x] Support for FLUX.1 Dev model
-- [ ] Integration of LoRA
+- [x] Integration of LoRA
 - [ ] Image-to-image generation
 
 ## Acknowledgements
