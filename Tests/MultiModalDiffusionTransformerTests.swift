@@ -16,7 +16,7 @@ final class MultiModalDiffusionTransformerTests: XCTestCase {
         let pooledPromptEmbeds = MLXRandom.normal([1, config.pooledProjectionDim])
         let hiddenStates = MLXRandom.normal([1, config.jointAttentionDim, config.inChannels])
         
-        let evaluateParameters = EvaluateParameters()
+        let evaluateParameters = EvaluateParameters(width: 1024, height: 1024, shiftSigmas: true)
         
         let output = transformer(
             t: t,

@@ -103,7 +103,7 @@ func fuseLoraWeights(
         let transformerWeight = fusedWeights[weightKey]
       {
         let loraScale: Float = 1.0 
-        let loraFused = MLX.matmul(loraB, loraA)
+        let loraFused = matmul(loraB, loraA)
         fusedWeights[weightKey] = transformerWeight + loraScale * loraFused
       }
     }

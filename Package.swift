@@ -11,7 +11,7 @@ let package = Package(
       targets: ["FluxSwift"])
   ],
   dependencies: [
-    .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.16.0"),
+    .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.18.0"),
     .package(url: "https://github.com/huggingface/swift-transformers", from: "0.1.13"),
   ],
   targets: [
