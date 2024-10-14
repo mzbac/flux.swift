@@ -7,7 +7,7 @@ import Tokenizers
 
 open class FLUX {
 
-  internal func loadLoraWeights(hub: HubApi, loraPath: String, dType: DType) async throws
+  internal func loadLoraWeights(hub: HubApi, loraPath: String, dType: DType) throws
     -> [String: MLXArray]
   {
     let loraDirectory: URL
@@ -15,7 +15,6 @@ open class FLUX {
       loraDirectory = URL(fileURLWithPath: loraPath)
     } else {
       let repo = Hub.Repo(id: loraPath)
-      try await hub.snapshot(from: repo, matching: ["*.safetensors"])
       loraDirectory = hub.localRepoLocation(repo)
     }
 
@@ -144,7 +143,7 @@ open class FLUX {
   }
 }
 
-public class Flux1Schnell: FLUX, TextToImageGenerator {
+public class Flux1Schnell: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
   let transformer: MultiModalDiffusionTransformer
@@ -240,7 +239,7 @@ public class Flux1Schnell: FLUX, TextToImageGenerator {
   }
 }
 
-public class Flux1Dev: FLUX, TextToImageGenerator {
+public class Flux1Dev: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
   let transformer: MultiModalDiffusionTransformer
@@ -349,7 +348,7 @@ public protocol ImageGenerator {
   func decode(xt: MLXArray) -> MLXArray
 }
 
-public protocol TextToImageGenerator: ImageGenerator {
+public protocol TextToImageGenerator: ImageGenerator, Sendable {
   func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator
 }
 

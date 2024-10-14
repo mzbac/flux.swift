@@ -102,7 +102,7 @@ func fuseLoraWeights(
       if let loraA = loraWeight[loraAKey], let loraB = loraWeight[loraBKey],
         let transformerWeight = fusedWeights[weightKey]
       {
-        let loraScale: Float = 1.0 
+        let loraScale: Float = 1.0
         let loraFused = matmul(loraB, loraA)
         fusedWeights[weightKey] = transformerWeight + loraScale * loraFused
       }
@@ -116,7 +116,7 @@ public struct FluxConfiguration: Sendable {
   let files: [FileKey: String]
   public let defaultParameters: @Sendable () -> EvaluateParameters
   let factory:
-    @Sendable (HubApi, FluxConfiguration, LoadConfiguration) async throws ->
+    @Sendable (HubApi, FluxConfiguration, LoadConfiguration) throws ->
       FLUX
 
   public func download(
@@ -127,10 +127,23 @@ public struct FluxConfiguration: Sendable {
       from: repo, matching: Array(files.values), progressHandler: progressHandler)
   }
 
+  public func downloadLoraWeights(
+    hub: HubApi = HubApi(), loadConfiguration: LoadConfiguration,
+    progressHandler: @escaping (Progress) -> Void = { _ in }
+  ) async throws {
+    guard let loraPath = loadConfiguration.loraPath else {
+      throw FluxConfigurationError.missingLoraPath
+    }
+
+    let repo = Hub.Repo(id: loraPath)
+    try await hub.snapshot(
+      from: repo, matching: ["*.safetensors"], progressHandler: progressHandler)
+  }
+
   public func textToImageGenerator(hub: HubApi = HubApi(), configuration: LoadConfiguration)
-    async throws -> TextToImageGenerator?
+    throws -> TextToImageGenerator?
   {
-    try await factory(hub, self, configuration) as? TextToImageGenerator
+    try factory(hub, self, configuration) as? TextToImageGenerator
   }
 
   public static let flux1Schnell = FluxConfiguration(
@@ -149,7 +162,7 @@ public struct FluxConfiguration: Sendable {
         hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
 
       if let loraPath = loadConfiguration.loraPath {
-        let loraWeight = try await flux.loadLoraWeights(
+        let loraWeight = try flux.loadLoraWeights(
           hub: hub, loraPath: loraPath, dType: loadConfiguration.dType)
 
         let weights = fuseLoraWeights(
@@ -191,7 +204,7 @@ public struct FluxConfiguration: Sendable {
         hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
 
       if let loraPath = loadConfiguration.loraPath {
-        let loraWeight = try await flux.loadLoraWeights(
+        let loraWeight = try flux.loadLoraWeights(
           hub: hub, loraPath: loraPath, dType: loadConfiguration.dType)
 
         let weights = fuseLoraWeights(
@@ -216,4 +229,17 @@ public struct FluxConfiguration: Sendable {
       return flux
     }
   )
+}
+
+enum FluxConfigurationError: Error {
+  case missingLoraPath
+}
+
+extension FluxConfigurationError: LocalizedError {
+  var errorDescription: String? {
+    switch self {
+    case .missingLoraPath:
+      return "LoRA path is missing. Please provide a valid LoRA path in the LoadConfiguration."
+    }
+  }
 }
