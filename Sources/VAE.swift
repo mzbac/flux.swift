@@ -24,8 +24,8 @@ public class Attention: Module {
     self._toOut.wrappedValue = [Linear(512, 512)]
   }
 
-  func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
-    let x = inputArray.transposed(0, 2, 3, 1)
+  func callAsFunction(_ x: MLXArray) -> MLXArray {
+    let x = x
     let xType = x.dtype
 
     let (B, H, W, C) = (x.shape[0], x.shape[1], x.shape[2], x.shape[3])
@@ -44,7 +44,7 @@ public class Attention: Module {
     y = toOut[0](y)
     let outputTensor = x + y
 
-    return outputTensor.transposed(0, 3, 1, 2)
+    return outputTensor
   }
 }
 
@@ -84,7 +84,7 @@ public class ResnetBlock2D: Module {
   }
 
   func callAsFunction(_ x: MLXArray) -> MLXArray {
-    var x = x.transposed(0, 2, 3, 1)
+    var x = x
     let xType = x.dtype
     var hiddenStates = norm1(x.asType(.float32)).asType(xType)
     hiddenStates = silu(hiddenStates)
@@ -99,7 +99,7 @@ public class ResnetBlock2D: Module {
     }
 
     let outputTensor = x + hiddenStates
-    return outputTensor.transposed(0, 3, 1, 2)
+    return outputTensor
   }
 }
 
@@ -140,11 +140,10 @@ public class UpSampler: Module {
     super.init()
   }
 
-  func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
-    let transposed = inputArray.transposed(0, 2, 3, 1)
-    let upsampled = UpSampler.upSampleNearest(transposed)
+  func callAsFunction(_ x: MLXArray) -> MLXArray {
+    let upsampled = UpSampler.upSampleNearest(x)
     let convOutput = conv(upsampled)
-    return convOutput.transposed(0, 3, 1, 2)
+    return convOutput
   }
 
   static func upSampleNearest(_ x: MLXArray, scale: Int = 2) -> MLXArray {
@@ -239,22 +238,18 @@ public class Decoder: Module {
   }
 
   func callAsFunction(_ latents: MLXArray) -> MLXArray {
-    var x = latents.transposed(0, 2, 3, 1)
+    var x = latents
     let xType = x.dtype
     x = convIn(x)
-    x = x.transposed(0, 3, 1, 2)
     x = midBlock(x)
     for upBlock in upBlocks {
       x = upBlock(x)
     }
 
-    x = x.transposed(0, 2, 3, 1)
     x = convNormOut(x.asType(.float32)).asType(xType)
-    x = x.transposed(0, 3, 1, 2)
     x = silu(x)
-    x = x.transposed(0, 2, 3, 1)
     x = convOut(x)
-    return x.transposed(0, 3, 1, 2)
+    return x
   }
 }
 public class DownSampler: Module {
@@ -272,10 +267,9 @@ public class DownSampler: Module {
   }
 
   func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
-    var hiddenStates = padded(inputArray, widths: [[0, 0], [0, 0], [0, 1], [0, 1]])
-    hiddenStates = hiddenStates.transposed(0, 2, 3, 1)
+    var hiddenStates = padded(inputArray, widths: [[0, 0], [0, 1], [0, 1], [0, 0]])
     hiddenStates = conv(hiddenStates)
-    return hiddenStates.transposed(0, 3, 1, 2)
+    return hiddenStates
   }
 }
 
@@ -432,21 +426,21 @@ public class Encoder: Module {
   }
 
   func encode(_ latents: MLXArray) -> MLXArray {
-    var x = latents.transposed(0, 2, 3, 1)
+    var x = latents
     let xType = x.dtype
     x = convIn(x)
-    x = x.transposed(0, 3, 1, 2)
     for downBlock in downBlocks {
       x = downBlock(x)
     }
     x = midBlock(x)
-    x = x.transposed(0, 2, 3, 1)
+
     x = convNormOut(x.asType(.float32)).asType(xType)
-    x = x.transposed(0, 3, 1, 2)
+
     x = silu(x)
-    x = x.transposed(0, 2, 3, 1)
+
     x = convOut(x)
-    return x.transposed(0, 3, 1, 2)
+
+    return x
   }
 }
 
@@ -468,7 +462,7 @@ public class VAE: Module {
 
   public func encode(latents: MLXArray) -> MLXArray {
     let encoded = encoder.encode(latents)
-    let (mean, _) = encoded.split(axis: 1)
+    let (mean, _) = encoded.split(axis: 3)
     return (mean - config.shiftFactor) * config.scalingFactor
   }
 }
