@@ -46,8 +46,8 @@ while let xt = denoiser.next() {
 
 func unpackLatents(_ latents: MLXArray, height: Int, width: Int) -> MLXArray {
     let reshaped = latents.reshaped(1, height / 16, width / 16, 16, 2, 2)
-    let transposed = reshaped.transposed(0, 3, 1, 4, 2, 5)
-    return transposed.reshaped(1, 16, height / 16 * 2, width / 16 * 2)
+    let transposed = reshaped.transposed(0, 1, 4, 2, 5, 3)
+    return transposed.reshaped(1, height / 16 * 2, width / 16 * 2, 16)
 }
 
 // Decode latents to image
@@ -55,7 +55,7 @@ let unpackedLatents = unpackLatents(lastXt, height: params.height, width: params
 let decoded = generator.decode(xt: unpackedLatents)
 
 // Process and save the image
-let imageData = decoded.squeezed().transposed(1, 2, 0)
+let imageData = decoded.squeezed()
 let raster = (imageData * 255).asType(.uint8)
 let image = Image(raster)
 try image.save(url: URL(fileURLWithPath: "output.png"))
