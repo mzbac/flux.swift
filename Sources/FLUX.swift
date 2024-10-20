@@ -146,7 +146,7 @@ open class FLUX {
 public class Flux1Schnell: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
-  let transformer: MultiModalDiffusionTransformer
+  public let transformer: MultiModalDiffusionTransformer
   let vae: VAE
   let t5Encoder: T5Encoder
   let clipEncoder: CLIPEncoder
@@ -186,27 +186,7 @@ public class Flux1Schnell: FLUX, TextToImageGenerator, @unchecked Sendable {
     return transformer
   }
 
-  public func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator {
-    let latentsShape = [1, (parameters.height / 16) * (parameters.width / 16), 64]
-    let latents: MLXArray
-    if let seed = parameters.seed {
-      latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(seed))
-    } else {
-      latents = MLXRandom.normal(latentsShape)
-    }
-    let (promptEmbeddings, pooledPromptEmbeddings) = conditionText(prompt: parameters.prompt)
-
-    return DenoiseIterator(
-      steps: parameters.numInferenceSteps,
-      promptEmbeddings: promptEmbeddings,
-      pooledPromptEmbeddings: pooledPromptEmbeddings,
-      latents: latents,
-      evaluateParameters: parameters,
-      transformer: transformer
-    )
-  }
-
-  func conditionText(prompt: String) -> (MLXArray, MLXArray) {
+  public func conditionText(prompt: String) -> (MLXArray, MLXArray) {
     let t5Tokens = t5Tokenizer.encode(text: prompt, addSpecialTokens: true)
     let paddedT5Tokens =
       Array(t5Tokens.prefix(256))
@@ -242,7 +222,7 @@ public class Flux1Schnell: FLUX, TextToImageGenerator, @unchecked Sendable {
 public class Flux1Dev: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
-  let transformer: MultiModalDiffusionTransformer
+  public let transformer: MultiModalDiffusionTransformer
   let vae: VAE
   let t5Encoder: T5Encoder
   let clipEncoder: CLIPEncoder
@@ -283,27 +263,7 @@ public class Flux1Dev: FLUX, TextToImageGenerator, @unchecked Sendable {
     return transformer
   }
 
-  public func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator {
-    let latentsShape = [1, (parameters.height / 16) * (parameters.width / 16), 64]
-    let latents: MLXArray
-    if let seed = parameters.seed {
-      latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(seed))
-    } else {
-      latents = MLXRandom.normal(latentsShape)
-    }
-    let (promptEmbeddings, pooledPromptEmbeddings) = conditionText(prompt: parameters.prompt)
-
-    return DenoiseIterator(
-      steps: parameters.numInferenceSteps,
-      promptEmbeddings: promptEmbeddings,
-      pooledPromptEmbeddings: pooledPromptEmbeddings,
-      latents: latents,
-      evaluateParameters: parameters,
-      transformer: transformer
-    )
-  }
-
-  func conditionText(prompt: String) -> (MLXArray, MLXArray) {
+  public func conditionText(prompt: String) -> (MLXArray, MLXArray) {
     let t5Tokens = t5Tokenizer.encode(text: prompt, addSpecialTokens: true)
     let paddedT5Tokens =
       Array(t5Tokens.prefix(512))
@@ -349,7 +309,43 @@ public protocol ImageGenerator {
 }
 
 public protocol TextToImageGenerator: ImageGenerator, Sendable {
-  func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator
+    var transformer: MultiModalDiffusionTransformer { get }
+    func conditionText(prompt: String) -> (MLXArray, MLXArray)
+}
+
+extension TextToImageGenerator {
+    public func generateLatents(parameters: EvaluateParameters) -> DenoiseIterator {
+        let latentsShape = [1, (parameters.height / 16) * (parameters.width / 16), 64]
+        let latents: MLXArray
+        if let seed = parameters.seed {
+            latents = MLXRandom.normal(latentsShape, key: MLXRandom.key(seed))
+        } else {
+            latents = MLXRandom.normal(latentsShape)
+        }
+        let (promptEmbeddings, pooledPromptEmbeddings) = conditionText(prompt: parameters.prompt)
+
+        return DenoiseIterator(
+            steps: parameters.numInferenceSteps,
+            promptEmbeddings: promptEmbeddings,
+            pooledPromptEmbeddings: pooledPromptEmbeddings,
+            latents: latents,
+            evaluateParameters: parameters,
+            transformer: transformer
+        )
+    }
+}
+
+/// Public interface for transforming a text prompt into an image.
+///
+/// Steps:
+///
+/// - ``generateLatents(image:parameters:strength:)``
+/// - evaluate each of the latents from the iterator
+/// - ``ImageGenerator/decode(xt:)`` or ``ImageGenerator/detachedDecoder()`` to convert the final latent into an image
+/// - use ``Image`` to save the image
+public protocol ImageToImageGenerator: ImageGenerator, Sendable {
+    func generateLatents(image: MLXArray, parameters: EvaluateParameters, strength: Float)
+        -> DenoiseIterator
 }
 
 public typealias ImageDecoder = (MLXArray) -> MLXArray
@@ -364,14 +360,15 @@ public struct DenoiseIterator: Sequence, IteratorProtocol {
   let transformer: MultiModalDiffusionTransformer
 
   init(
-    steps: Int, promptEmbeddings: MLXArray, pooledPromptEmbeddings: MLXArray, latents: MLXArray,
+    startStep: Int = 0, steps: Int, promptEmbeddings: MLXArray, pooledPromptEmbeddings: MLXArray,
+    latents: MLXArray,
     evaluateParameters: EvaluateParameters, transformer: MultiModalDiffusionTransformer
   ) {
     self.steps = steps
     self.promptEmbeddings = promptEmbeddings
     self.pooledPromptEmbeddings = pooledPromptEmbeddings
     self.latents = latents
-    self.i = 0
+    self.i = startStep
     self.evaluateParameters = evaluateParameters
     self.transformer = transformer
   }
