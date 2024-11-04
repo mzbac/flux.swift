@@ -362,10 +362,12 @@ public struct DenoiseIterator: Sequence, IteratorProtocol {
   public var i: Int
   let evaluateParameters: EvaluateParameters
   let transformer: MultiModalDiffusionTransformer
+  let onStep: ((MLXArray) -> Void)?
 
   init(
     steps: Int, promptEmbeddings: MLXArray, pooledPromptEmbeddings: MLXArray, latents: MLXArray,
-    evaluateParameters: EvaluateParameters, transformer: MultiModalDiffusionTransformer
+    evaluateParameters: EvaluateParameters, transformer: MultiModalDiffusionTransformer,
+    onStep: ((MLXArray) -> Void)? = nil
   ) {
     self.steps = steps
     self.promptEmbeddings = promptEmbeddings
@@ -374,6 +376,7 @@ public struct DenoiseIterator: Sequence, IteratorProtocol {
     self.i = 0
     self.evaluateParameters = evaluateParameters
     self.transformer = transformer
+    self.onStep = onStep
   }
 
   public mutating func next() -> MLXArray? {
@@ -391,6 +394,8 @@ public struct DenoiseIterator: Sequence, IteratorProtocol {
     let dt = evaluateParameters.sigmas[i + 1] - evaluateParameters.sigmas[i]
     latents += noise * dt
     i += 1
+
+    onStep?(latents)
     return latents
   }
 }
