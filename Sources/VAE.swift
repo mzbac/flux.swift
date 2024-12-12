@@ -260,10 +260,8 @@ public class DownSampler: Module {
       inputChannels: convIn,
       outputChannels: convOut,
       kernelSize: 3,
-      stride: 2,
-      padding: 0
+      stride: 2
     )
-    super.init()
   }
 
   func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
@@ -275,71 +273,47 @@ public class DownSampler: Module {
 
 public class DownBlock: Module {
   @ModuleInfo var resnets: [ResnetBlock2D]
-  @ModuleInfo var downsampler: DownSampler?
+  @ModuleInfo var downsamplers: [DownSampler]?
 
-  init(
-    numResnets: Int,
-    norm1: Int,
-    conv1In: Int,
-    conv1Out: Int,
-    norm2: Int,
-    conv2In: Int,
-    conv2Out: Int,
-    isConvShortcut: Bool = false,
-    convShortcutIn: Int? = nil,
-    convShortcutOut: Int? = nil,
-    hasDownSampler: Bool = true,
-    downSamplerConvIn: Int = 0,
-    downSamplerConvOut: Int = 0
-  ) {
-    self._resnets.wrappedValue = (0..<numResnets).map { i in
+  init(inChannels: Int, outChannels: Int, blockCount: Int, hasUpsampler: Bool) {
+    self._resnets.wrappedValue = (0..<blockCount).map { i in
       let isFirstBlock = i == 0
-      let resnetConv1In = isFirstBlock ? conv1In : conv2Out
-      let resnetConv1Out = conv1Out
-      let resnetConv2In = resnetConv1Out
-      let resnetConv2Out = conv2Out
-      let resnetNorm1 = isFirstBlock ? norm1 : norm2
-
+      let resnetInChannels = isFirstBlock ? inChannels : outChannels
+      let isConvShortcut = isFirstBlock && inChannels != outChannels
       return ResnetBlock2D(
-        norm1: resnetNorm1,
-        conv1In: resnetConv1In,
-        conv1Out: resnetConv1Out,
-        norm2: norm2,
-        conv2In: resnetConv2In,
-        conv2Out: resnetConv2Out,
-        convShortcutIn: isConvShortcut ? convShortcutIn : nil,
-        convShortcutOut: isConvShortcut ? convShortcutOut : nil,
-        isConvShortcut: isFirstBlock && isConvShortcut
+        norm1: resnetInChannels,
+        conv1In: resnetInChannels,
+        conv1Out: outChannels,
+        norm2: outChannels,
+        conv2In: outChannels,
+        conv2Out: outChannels,
+        convShortcutIn: isConvShortcut ? inChannels : nil,
+        convShortcutOut: isConvShortcut ? outChannels : nil,
+        isConvShortcut: isConvShortcut
       )
     }
 
-    if hasDownSampler {
-      self._downsampler.wrappedValue = DownSampler(
-        convIn: downSamplerConvIn, convOut: downSamplerConvOut)
+    if hasUpsampler {
+      self._downsamplers.wrappedValue = [DownSampler(convIn: outChannels, convOut: outChannels)]
     } else {
-      self._downsampler.wrappedValue = nil
+      self._downsamplers.wrappedValue = []
     }
-
     super.init()
   }
 
-  func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
+  public func callAsFunction(_ inputArray: MLXArray) -> MLXArray {
     var hiddenStates = inputArray
-
-    // Pass through ResNet blocks
     for resnet in resnets {
       hiddenStates = resnet(hiddenStates)
     }
 
-    // Downsample if applicable
-    if let downsampler = downsampler {
-      hiddenStates = downsampler(hiddenStates)
+    if !downsamplers!.isEmpty {
+      hiddenStates = downsamplers![0](hiddenStates)
     }
 
     return hiddenStates
   }
 }
-
 public class Encoder: Module {
   @ModuleInfo(key: "conv_in") var convIn: Conv2d
   @ModuleInfo(key: "mid_block") var midBlock: UnetMidBlock
@@ -357,56 +331,20 @@ public class Encoder: Module {
     self._midBlock.wrappedValue = UnetMidBlock(config)
     self._downBlocks.wrappedValue = [
       DownBlock(
-        numResnets: 2,
-        norm1: 128,
-        conv1In: 128,
-        conv1Out: 128,
-        norm2: 128,
-        conv2In: 128,
-        conv2Out: 128,
-        hasDownSampler: true,
-        downSamplerConvIn: 128,
-        downSamplerConvOut: 128
+        inChannels: 128, outChannels: 128, blockCount: 2,
+        hasUpsampler: true
       ),
       DownBlock(
-        numResnets: 2,
-        norm1: 128,
-        conv1In: 128,
-        conv1Out: 256,
-        norm2: 256,
-        conv2In: 256,
-        conv2Out: 256,
-        isConvShortcut: true,
-        convShortcutIn: 128,
-        convShortcutOut: 256,
-        hasDownSampler: true,
-        downSamplerConvIn: 256,
-        downSamplerConvOut: 256
+        inChannels: 128, outChannels: 256, blockCount: 2,
+        hasUpsampler: true
       ),
       DownBlock(
-        numResnets: 2,
-        norm1: 256,
-        conv1In: 256,
-        conv1Out: 512,
-        norm2: 512,
-        conv2In: 512,
-        conv2Out: 512,
-        isConvShortcut: true,
-        convShortcutIn: 256,
-        convShortcutOut: 512,
-        hasDownSampler: true,
-        downSamplerConvIn: 512,
-        downSamplerConvOut: 512
+        inChannels: 256, outChannels: 512, blockCount: 2,
+        hasUpsampler: true
       ),
       DownBlock(
-        numResnets: 2,
-        norm1: 512,
-        conv1In: 512,
-        conv1Out: 512,
-        norm2: 512,
-        conv2In: 512,
-        conv2Out: 512,
-        hasDownSampler: false
+        inChannels: 512, outChannels: 512, blockCount: 2,
+        hasUpsampler: false
       ),
     ]
     self._convNormOut.wrappedValue = GroupNorm(
@@ -425,7 +363,7 @@ public class Encoder: Module {
     )
   }
 
-  func encode(_ latents: MLXArray) -> MLXArray {
+  func callAsFunction(_ latents: MLXArray) -> MLXArray {
     var x = latents
     let xType = x.dtype
     x = convIn(x)
@@ -455,14 +393,14 @@ public class VAE: Module {
     self.config = config
   }
 
-  public func decode(latents: MLXArray) -> MLXArray {
+  public func decode(_ latents: MLXArray) -> MLXArray {
     let scaledLatents = (latents / config.scalingFactor) + config.shiftFactor
     return decoder(scaledLatents)
   }
 
-  public func encode(latents: MLXArray) -> MLXArray {
-    let encoded = encoder.encode(latents)
-    let (mean, _) = encoded.split(axis: 3)
+  public func encode(_ latents: MLXArray) -> MLXArray {
+    let encoded = encoder(latents)
+    let (mean, _) = encoded.split(axis: -1)
     return (mean - config.shiftFactor) * config.scalingFactor
   }
 }

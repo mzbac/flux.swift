@@ -18,7 +18,7 @@ final class VAEDecoderTests: XCTestCase {
         let width = 128
         let latents = MLXRandom.normal([batchSize, height, width, channels])
 
-        let decodedOutput = vae.decode(latents: latents)
+        let decodedOutput = vae.decode(latents)
 
         XCTAssertEqual(
             decodedOutput.shape, [batchSize, 1024, 1024, 3], "Decoded output shape is incorrect")
@@ -34,7 +34,7 @@ final class VAEDecoderTests: XCTestCase {
         let width = 1024
         let inputImage = MLXRandom.normal([batchSize, height, width, channels])
 
-        let encodedOutput = vae.encode(latents: inputImage)
+        let encodedOutput = vae.encode(inputImage)
 
         XCTAssertEqual(
             encodedOutput.shape,

@@ -146,6 +146,12 @@ public struct FluxConfiguration: Sendable {
     try factory(hub, self, configuration) as? TextToImageGenerator
   }
 
+  public func ImageToImageGenerator(hub: HubApi = HubApi(), configuration: LoadConfiguration)
+    throws -> ImageToImageGenerator?
+  {
+    try factory(hub, self, configuration) as? ImageToImageGenerator
+  }
+
   public static let flux1Schnell = FluxConfiguration(
     id: "black-forest-labs/FLUX.1-schnell",
     files: [
