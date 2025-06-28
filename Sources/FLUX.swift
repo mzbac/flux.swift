@@ -85,10 +85,10 @@ open class FLUX {
     let vaeConfig = VAEConfiguration()
     let vae = VAE(vaeConfig)
 
-    var vaeWeights = try loadArrays(
-      url: directory.appending(path: "vae/diffusion_pytorch_model.safetensors"))
+    let vaeURL = directory.appending(path: "vae/diffusion_pytorch_model.safetensors")
+    var vaeWeights = try loadArrays(url: vaeURL)
 
-    for (key, value) in vaeWeights {
+    for (key, var value) in vaeWeights {
       if value.dtype != .bfloat16 {
         vaeWeights[key] = value.asType(dType)
       }
@@ -97,6 +97,7 @@ open class FLUX {
       }
     }
     vae.update(parameters: ModuleParameters.unflattened(vaeWeights))
+
     return vae
   }
 
@@ -143,7 +144,7 @@ open class FLUX {
   }
 }
 
-public class Flux1Schnell: FLUX, TextToImageGenerator, ImageToImageGenerator, @unchecked Sendable {
+public class Flux1Schnell: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
   public let transformer: MultiModalDiffusionTransformer
@@ -202,7 +203,8 @@ public class Flux1Schnell: FLUX, TextToImageGenerator, ImageToImageGenerator, @u
   }
 
   open func ensureLoaded() {
-    eval(transformer, t5Encoder, clipEncoder, vae)
+    // Don't evaluate VAE as it needs proper input
+    eval(transformer, t5Encoder, clipEncoder)
   }
 
   public func decode(xt: MLXArray) -> MLXArray {
@@ -219,7 +221,7 @@ public class Flux1Schnell: FLUX, TextToImageGenerator, ImageToImageGenerator, @u
   }
 }
 
-public class Flux1Dev: FLUX, TextToImageGenerator, ImageToImageGenerator, @unchecked Sendable {
+public class Flux1Dev: FLUX, TextToImageGenerator, @unchecked Sendable {
   let clipTokenizer: CLIPTokenizer
   let t5Tokenizer: any Tokenizer
   public let transformer: MultiModalDiffusionTransformer
@@ -279,7 +281,8 @@ public class Flux1Dev: FLUX, TextToImageGenerator, ImageToImageGenerator, @unche
   }
 
   open func ensureLoaded() {
-    eval(transformer, t5Encoder, clipEncoder, vae)
+    // Don't evaluate VAE as it needs proper input
+    eval(transformer, t5Encoder, clipEncoder)
   }
 
   public func decode(xt: MLXArray) -> MLXArray {
@@ -295,6 +298,87 @@ public class Flux1Dev: FLUX, TextToImageGenerator, ImageToImageGenerator, @unche
     return decode(xt:)
   }
 }
+
+public class Flux1KontextDev: FLUX, TextToImageGenerator, KontextImageToImageGenerator, @unchecked
+  Sendable
+{
+  let clipTokenizer: CLIPTokenizer
+  let t5Tokenizer: any Tokenizer
+  public let transformer: MultiModalDiffusionTransformer
+  public let vae: VAE
+  let t5Encoder: T5Encoder
+  let clipEncoder: CLIPEncoder
+
+  public init(hub: HubApi, configuration: FluxConfiguration, dType: DType) throws {
+    let repo = Hub.Repo(id: configuration.id)
+    let directory = hub.localRepoLocation(repo)
+
+    (self.t5Tokenizer, self.clipTokenizer) = try Self.loadTokenizers(directory: directory, hub: hub)
+    self.vae = try Self.loadVAE(directory: directory, dType: dType)
+    self.transformer = try Self.loadTransformer(directory: directory, dType: dType)
+    self.t5Encoder = try Self.loadT5Encoder(directory: directory, dType: dType)
+    self.clipEncoder = try Self.loadCLIPEncoder(directory: directory, dType: dType)
+  }
+
+  private static func loadTransformer(directory: URL, dType: DType) throws
+    -> MultiModalDiffusionTransformer
+  {
+    let transformer = MultiModalDiffusionTransformer(
+      MultiModalDiffusionConfiguration(guidanceEmbeds: true))
+    var transformerWeights = [String: MLXArray]()
+    let enumerator = FileManager.default.enumerator(
+      at: directory.appending(path: "transformer"), includingPropertiesForKeys: nil)!
+    for case let url as URL in enumerator {
+      if url.pathExtension == "safetensors" {
+        let w = try loadArrays(url: url)
+        for (key, value) in w {
+          let newKey = remapWeightKey(key)
+          if value.dtype != .bfloat16 {
+            transformerWeights[newKey] = value.asType(dType)
+          } else {
+            transformerWeights[newKey] = value
+          }
+        }
+      }
+    }
+    transformer.update(parameters: ModuleParameters.unflattened(transformerWeights))
+    return transformer
+  }
+
+  public func conditionText(prompt: String) -> (MLXArray, MLXArray) {
+    let t5Tokens = t5Tokenizer.encode(text: prompt, addSpecialTokens: true)
+    let paddedT5Tokens =
+      Array(t5Tokens.prefix(512))
+      + Array(repeating: 0, count: max(0, 512 - min(t5Tokens.count, 512)))
+    let clipTokens = clipTokenizer.tokenize(text: prompt)
+    let paddedClipTokens =
+      Array(clipTokens.prefix(77))
+      + Array(repeating: 49407, count: max(0, 77 - min(clipTokens.count, 77)))
+    let promptEmbeddings = t5Encoder(MLXArray(paddedT5Tokens)[.newAxis])
+    let pooledPromptEmbeddings = clipEncoder(MLXArray(paddedClipTokens)[.newAxis])
+
+    return (promptEmbeddings, pooledPromptEmbeddings)
+  }
+
+  open func ensureLoaded() {
+    // Don't evaluate VAE as it needs proper input
+    eval(transformer, t5Encoder, clipEncoder)
+  }
+
+  public func decode(xt: MLXArray) -> MLXArray {
+    detachedDecoder()(xt)
+  }
+  public func detachedDecoder() -> ImageDecoder {
+    let autoencoder = self.vae
+    func decode(xt: MLXArray) -> MLXArray {
+      var x = autoencoder.decode(xt)
+      x = clip(x / 2 + 0.5, min: 0, max: 1)
+      return x
+    }
+    return decode(xt:)
+  }
+}
+
 public protocol ImageGenerator {
   func ensureLoaded()
 

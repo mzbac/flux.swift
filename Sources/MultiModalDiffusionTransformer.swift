@@ -35,10 +35,13 @@ public class EmbedND: Module {
   func callAsFunction(_ ids: MLXArray) -> MLXArray {
     let emb = MLX.concatenated(
       (0..<3).map { i in
-        EmbedND.rope(ids[.ellipsis, i], dim: axesDim[i], theta: theta)
+        let slice = ids[.ellipsis, i]
+        let ropeResult = EmbedND.rope(slice, dim: axesDim[i], theta: theta)
+        return ropeResult
       },
       axis: -3
     )
+    
     return MLX.expandedDimensions(emb, axis: 1)
   }
 
@@ -127,7 +130,7 @@ public class TimeTextEmbed: Module {
     -> MLXArray
   {
     let timeStepsProj = TimeTextEmbed.timeProj(timeStep)
-    let timeStepsEmb = timestepEmbedder(timeStepsProj)
+    var timeStepsEmb = timestepEmbedder(timeStepsProj)
     if let guidanceEmbedder = guidanceEmbedder {
       timeStepsEmb += guidanceEmbedder(TimeTextEmbed.timeProj(guidance))
     }
@@ -579,7 +582,7 @@ public class MultiModalDiffusionTransformer: Module {
     pooledPromptEmbeds: MLXArray,
     hiddenStates: MLXArray,
     evaluateParameters: EvaluateParameters,
-
+    imgIds: MLXArray? = nil,
     controlnetBlockSamples: [MLXArray]? = nil,
     controlnetSingleBlockSamples: [MLXArray]? = nil
   ) -> MLXArray {
@@ -594,10 +597,14 @@ public class MultiModalDiffusionTransformer: Module {
     var encoderHiddenStates = contextEmbedder(promptEmbeds)
     let txtIds = MultiModalDiffusionTransformer.prepareTextIds(seqLen: promptEmbeds.dim(1))
       
-    let imgIds = MultiModalDiffusionTransformer.prepareLatentImageIds(
+    var imageIds = MultiModalDiffusionTransformer.prepareLatentImageIds(
       height: evaluateParameters.height, width: evaluateParameters.width)
-
-    let ids = MLX.concatenated([txtIds, imgIds], axis: 1)
+    
+    if let kontextImgIds = imgIds {
+      imageIds = MLX.concatenated([imageIds, kontextImgIds], axis: 1)
+    }
+    
+    let ids = MLX.concatenated([txtIds, imageIds], axis: 1)
     let imageRotaryEmb = posEmbed(ids)
 
     for (idx, block) in transformerBlocks.enumerated() {

@@ -94,7 +94,7 @@ func fuseLoraWeights(
   var fusedWeights = transformerWeight
 
   for (key, value) in transform.namedModules() {
-    if let _ = value as? Linear {
+    if value as? Linear != nil {
       let loraAKey = "transformer." + key + ".lora_A.weight"
       let loraBKey = "transformer." + key + ".lora_B.weight"
       let weightKey = key + ".weight"
@@ -152,6 +152,13 @@ public struct FluxConfiguration: Sendable {
     try factory(hub, self, configuration) as? ImageToImageGenerator
   }
 
+  public func kontextImageToImageGenerator(hub: HubApi = HubApi(), configuration: LoadConfiguration)
+    throws -> KontextImageToImageGenerator?
+  {
+    let generator = try factory(hub, self, configuration) as? KontextImageToImageGenerator
+    return generator
+  }
+
   public static let flux1Schnell = FluxConfiguration(
     id: "black-forest-labs/FLUX.1-schnell",
     files: [
@@ -207,6 +214,48 @@ public struct FluxConfiguration: Sendable {
     defaultParameters: { EvaluateParameters(numInferenceSteps: 20, shiftSigmas: true) },
     factory: { hub, fluxConfiguration, loadConfiguration in
       let flux = try Flux1Dev(
+        hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
+
+      if let loraPath = loadConfiguration.loraPath {
+        let loraWeight = try flux.loadLoraWeights(
+          hub: hub, loraPath: loraPath, dType: loadConfiguration.dType)
+
+        let weights = fuseLoraWeights(
+          transform: flux.transformer,
+          transformerWeight: Dictionary(
+            uniqueKeysWithValues: flux.transformer.parameters().flattened()), loraWeight: loraWeight
+        )
+
+        flux.transformer.update(parameters: ModuleParameters.unflattened(weights))
+      }
+
+      if loadConfiguration.quantize {
+        quantize(model: flux.clipEncoder, filter: { k, m in m is Linear })
+        quantize(model: flux.t5Encoder, filter: { k, m in m is Linear })
+        quantize(
+          model: flux.transformer,
+          filter: { k, m in
+            m is Linear && (m as? Linear)?.weight.shape[1] ?? 0 > 64
+          })
+        quantize(model: flux.vae, filter: { k, m in m is Linear })
+      }
+      return flux
+    }
+  )
+
+  public static let flux1KontextDev = FluxConfiguration(
+    id: "black-forest-labs/FLUX.1-Kontext-dev",
+    files: [
+      .mmditWeights: "transformer/*.safetensors",
+      .textEncoderWeights: "text_encoder/model.safetensors",
+      .textEncoderWeights2: "text_encoder_2/*.safetensors",
+      .tokenizer: "tokenizer/*",
+      .tokenizer2: "tokenizer_2/*",
+      .vaeWeights: "vae/diffusion_pytorch_model.safetensors",
+    ],
+    defaultParameters: { EvaluateParameters(numInferenceSteps: 30, shiftSigmas: true) },
+    factory: { hub, fluxConfiguration, loadConfiguration in
+      let flux = try Flux1KontextDev(
         hub: hub, configuration: fluxConfiguration, dType: loadConfiguration.dType)
 
       if let loraPath = loadConfiguration.loraPath {
