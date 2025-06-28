@@ -1,6 +1,6 @@
 # FLUXSwift
 
-FLUXSwift is a Swift implementation of the FLUX.1 model, it uses the mlx-swift for gpu acceleration on Apple Silicon.
+FLUXSwift is a Swift implementation of the FLUX.1 model family (Schnell, Dev, and Kontext), using mlx-swift for GPU acceleration on Apple Silicon.
 
 ## Requirements
 
@@ -20,10 +20,20 @@ dependencies: [
 
 ## Usage
 
+### Available Models
+
+FLUX Swift supports three models:
+- **FLUX.1-schnell**: Fast inference model (default, no token required)
+- **FLUX.1-dev**: Development model (requires Hugging Face token)
+- **FLUX.1-Kontext-dev**: Image-to-image transformation model (requires Hugging Face token)
+
+### Text-to-Image Generation
+
 Here's how to use FLUX Swift programmatically in your Swift projects:
 
 ```swift
 import FluxSwift
+import Hub
 
 // Initialize the FLUX model
 let config = FluxConfiguration.flux1Schnell
@@ -60,23 +70,83 @@ let raster = (imageData * 255).asType(.uint8)
 let image = Image(raster)
 try image.save(url: URL(fileURLWithPath: "output.png"))
 ```
-This example demonstrates how to initialize the FLUX.1 Schnell model, set up generation parameters, generate image latents, decode them into an image, and save the result.
+
+### Image-to-Image Generation with Kontext
+
+FLUX.1-Kontext-dev supports image-to-image transformations:
+
+```swift
+import FluxSwift
+import Hub
+import MLX
+
+// Initialize Kontext model (requires Hugging Face token)
+let config = FluxConfiguration.flux1KontextDev
+let hub = HubApi(hfToken: "your-hf-token")
+let loadConfig = LoadConfiguration(float16: true, quantize: false)
+let generator = try config.kontextImageToImageGenerator(hub: hub, configuration: loadConfig)!
+
+// Load and preprocess input image
+let inputImage = try Image(url: URL(fileURLWithPath: "input.jpg"))
+let normalized = (inputImage.data.asType(.float32) / 255) * 2 - 1
+
+// Set up parameters
+var params = config.defaultParameters()
+params.prompt = "Transform this into a watercolor painting"
+params.width = 1024  // Output dimensions
+params.height = 768
+
+// Generate transformed image
+var denoiser = generator.generateKontextLatents(
+    image: normalized,
+    parameters: params
+)
+
+var lastXt: MLXArray!
+while let xt = denoiser.next() {
+    print("Step \(denoiser.i)/\(params.numInferenceSteps)")
+    eval(xt)
+    lastXt = xt
+}
+
+// Decode and save the result
+let unpackedLatents = unpackLatents(lastXt, height: params.height, width: params.width)
+let decoded = generator.decode(xt: unpackedLatents)
+let imageData = decoded.squeezed()
+let raster = (imageData * 255).asType(.uint8)
+let outputImage = Image(raster)
+try outputImage.save(url: URL(fileURLWithPath: "output.png"))
+```
+
+These examples demonstrate how to use both text-to-image generation with FLUX.1 Schnell and image-to-image transformation with FLUX.1-Kontext-dev.
 
 ## Configuration
 
 FLUX Swift provides various configuration options:
 
-1. `FluxConfiguration`: Defines the model architecture and file locations.
-2. `LoadConfiguration`: Specifies loading options such as data type and quantization.
-3. `EvaluateParameters`: Sets parameters for the text-to-image generation process.
+1. **FluxConfiguration**: Defines the model architecture and file locations
+   - `flux1Schnell`: Fast inference model
+   - `flux1Dev`: Development model with enhanced quality
+   - `flux1KontextDev`: Image-to-image transformation model
+
+2. **LoadConfiguration**: Specifies loading options
+   - `float16`: Use half-precision for memory efficiency (default: true)
+   - `quantize`: Enable model quantization
+   - `loraPath`: Optional path to LoRA weights
+
+3. **EvaluateParameters**: Sets generation parameters
+   - `width`, `height`: Output image dimensions (must be multiples of 16)
+   - `numInferenceSteps`: Number of denoising steps
+   - `guidance`: Guidance scale for prompt adherence
+   - `prompt`: Text description for generation
+
+### Important Notes
+
+- **Hugging Face Token**: Required for Dev and Kontext models. Set via `HubApi(hfToken: "your-token")`
+- **Resolution**: Kontext automatically selects optimal resolution based on input aspect ratio
+- **Memory**: Use `float16: true` and `quantize: true` for lower memory usage
 
 For detailed configuration options, refer to the `FluxConfiguration.swift` file.
-
-## TODO
-
-- [x] Support for FLUX.1 Dev model
-- [x] Integration of LoRA
-- [ ] Image-to-image generation
 
 ## Acknowledgements
 
