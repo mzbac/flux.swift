@@ -43,20 +43,15 @@ extension KontextImageToImageGenerator {
       height: imageHeight
     )
     
-    let optimalLatentWidth = 2 * (optimalPixelWidth / 16)
-    let optimalLatentHeight = 2 * (optimalPixelHeight / 16)
-    
     let finalWidth = parameters.width
     let finalHeight = parameters.height
     
-    
     let resizedImage = KontextUtilities.resizeImage(
       image, 
-      targetWidth: finalWidth, 
-      targetHeight: finalHeight
+      targetWidth: optimalPixelWidth, 
+      targetHeight: optimalPixelHeight
     )
     
-    // Image is already in HWC format, just add batch dimension
     let batchedImage = expandedDimensions(resizedImage, axis: 0)  
     let imgCond = vae.encode(batchedImage)
     
@@ -65,8 +60,8 @@ extension KontextImageToImageGenerator {
     let imgCondSeq = KontextUtilities.rearrangeForKontext(imgCondNCHW)
     
     let imgCondSeqIds = KontextUtilities.prepareKontextImageIds(
-      height: finalHeight,
-      width: finalWidth
+      height: optimalPixelHeight,
+      width: optimalPixelWidth
     )
     
     let noiseHeight = finalHeight / 16
