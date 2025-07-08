@@ -12,7 +12,8 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.25.4")),
-    .package(url: "https://github.com/huggingface/swift-transformers",.upToNextMinor(from: "0.1.21"))
+    .package(url: "https://github.com/huggingface/swift-transformers",.upToNextMinor(from: "0.1.21")),
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.5.3")
   ],
   targets: [
     .target(
@@ -24,6 +25,7 @@ let package = Package(
         .product(name: "MLXOptimizers", package: "mlx-swift"),
         .product(name: "MLXRandom", package: "mlx-swift"),
         .product(name: "Transformers", package: "swift-transformers"),
+        .product(name: "Logging", package: "swift-log"),
       ]
     ),
     .testTarget(

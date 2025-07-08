@@ -2,6 +2,9 @@ import Foundation
 import MLX
 import MLXNN
 import MLXRandom
+import Logging
+
+private let logger = Logger(label: "flux.swift.VAE")
 
 public struct VAEConfiguration {
   public let scalingFactor: Float = 0.3611

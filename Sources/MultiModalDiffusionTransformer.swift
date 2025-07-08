@@ -2,6 +2,9 @@ import Foundation
 import MLX
 import MLXFast
 import MLXNN
+import Logging
+
+private let logger = Logger(label: "flux.swift.MultiModalDiffusionTransformer")
 
 public struct MultiModalDiffusionConfiguration {
   public var attentionHeadDim = 128

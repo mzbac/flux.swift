@@ -43,13 +43,18 @@ extension KontextImageToImageGenerator {
       height: imageHeight
     )
     
-    let finalWidth = parameters.width
-    let finalHeight = parameters.height
+    let finalWidth = parameters.dimensionsExplicitlySet 
+                     ? parameters.width 
+                     : optimalPixelWidth
+    let finalHeight = parameters.dimensionsExplicitlySet 
+                      ? parameters.height 
+                      : optimalPixelHeight
     
+    // Resize image to match the final dimensions (either user-specified or optimal)
     let resizedImage = KontextUtilities.resizeImage(
       image, 
-      targetWidth: optimalPixelWidth, 
-      targetHeight: optimalPixelHeight
+      targetWidth: finalWidth, 
+      targetHeight: finalHeight
     )
     
     let batchedImage = expandedDimensions(resizedImage, axis: 0)  
@@ -60,8 +65,8 @@ extension KontextImageToImageGenerator {
     let imgCondSeq = KontextUtilities.rearrangeForKontext(imgCondNCHW)
     
     let imgCondSeqIds = KontextUtilities.prepareKontextImageIds(
-      height: optimalPixelHeight,
-      width: optimalPixelWidth
+      height: finalHeight,
+      width: finalWidth
     )
     
     let noiseHeight = finalHeight / 16
@@ -105,7 +110,7 @@ public struct KontextDenoiseIterator: Sequence, IteratorProtocol {
   let pooledPromptEmbeddings: MLXArray
   var latents: MLXArray
   public var i: Int = 0
-  let evaluateParameters: EvaluateParameters
+  public let evaluateParameters: EvaluateParameters
   let transformer: MultiModalDiffusionTransformer
   let kontextData: KontextData
   

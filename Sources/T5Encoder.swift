@@ -2,6 +2,9 @@ import Foundation
 import MLX
 import MLXFast
 import MLXNN
+import Logging
+
+private let logger = Logger(label: "flux.swift.T5Encoder")
 
 public struct T5Configuration {
   var vocabSize = 32128

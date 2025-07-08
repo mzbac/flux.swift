@@ -2,6 +2,9 @@ import Foundation
 import MLX
 import MLXFast
 import MLXNN
+import Logging
+
+private let logger = Logger(label: "flux.swift.CLIPEncoder")
 
 public struct CLIPConfiguration {
   var hiddenSize = 768
