@@ -54,7 +54,12 @@ public enum QuantizationUtils {
         case .uint32:
             elementSize = MemoryLayout<UInt32>.size
         case .float16:
+            #if os(iOS)
             elementSize = MemoryLayout<Float16>.size
+            #else
+            // Float16 is 2 bytes (16 bits)
+            elementSize = 2
+            #endif
         case .float32:
             elementSize = MemoryLayout<Float32>.size
         case .bfloat16:
